@@ -1,4 +1,4 @@
-// routes/public.js
+// routes/publicRoutes.js
 // These routes are for CUSTOMERS - no login required.
 // They only ever return safe, public information (never password_hash, etc.)
 
@@ -7,11 +7,16 @@ const router = express.Router();
 const db = require("../db");
 
 // GET /api/public/vendors
-// Lists all active vendors - this is what a customer sees when choosing where to order from
+// Lists all active vendors, including the storefront display fields
+// the Customer App's home screen needs (rating, delivery time, etc.)
 router.get("/vendors", async (req, res) => {
   try {
     const result = await db.query(
-      "SELECT id, name, address, phone FROM vendors WHERE is_active = true ORDER BY name",
+      `SELECT id, name, address, phone, cuisine, cover_image_url,
+              delivery_time_estimate, delivery_fee, deal_text, rating
+       FROM vendors
+       WHERE is_active = true
+       ORDER BY name`,
     );
     res.json(result.rows);
   } catch (err) {

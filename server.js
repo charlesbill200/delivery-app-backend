@@ -9,7 +9,8 @@ require("dotenv").config();
 const menuItemsRouter = require("./routes/menuItems");
 const ordersRouter = require("./routes/orders");
 const authRouter = require("./routes/auth");
-const publicRouter = require("./routes/publicRoutes");
+const publicRouter = require("./routes/publicRoutes"); // remember: your file is named publicRoutes.js
+const vendorProfileRouter = require("./routes/vendorProfile");
 
 const app = express();
 
@@ -22,6 +23,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/public", publicRouter);
 app.use("/api/menu-items", menuItemsRouter);
 app.use("/api/orders", ordersRouter);
+app.use("/api/vendor", vendorProfileRouter);
 
 // A simple "is the server alive" check
 app.get("/", (req, res) => {
