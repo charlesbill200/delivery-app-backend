@@ -7,8 +7,17 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 const requireAuth = require("../middleware/requireAuth");
+const multer = require("multer");
+const supabase = require("../lib/supabaseClient");
 
 router.use(requireAuth); // applies to every route defined below in this file
+
+// Store the uploaded file in memory (as a Buffer) instead of writing it
+// to disk first - simpler, and fine for image-sized files.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB cap
+});
 
 // GET /api/menu-items
 // Returns all menu items for the LOGGED-IN vendor
@@ -50,6 +59,56 @@ router.post("/", async (req, res) => {
     res
       .status(500)
       .json({ error: "Something went wrong creating the menu item" });
+  }
+});
+
+// POST /api/menu-items/:id/photo
+// Uploads a photo for one menu item and saves its public URL.
+// upload.single("photo") means the form field must be named "photo".
+router.post("/:id/photo", upload.single("photo"), async (req, res) => {
+  const { id } = req.params;
+
+  if (!req.file) {
+    return res.status(400).json({ error: "No photo file was provided" });
+  }
+
+  try {
+    // Give the file a unique name so two uploads never collide -
+    // vendorId + item id + timestamp + original extension.
+    const ext = req.file.originalname.split(".").pop();
+    const fileName = `${req.vendorId}/${id}-${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("menu-photos")
+      .upload(fileName, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false,
+      });
+
+    if (uploadError) throw uploadError;
+
+    // Since the bucket is public, this URL works forever without extra auth.
+    const { data: publicUrlData } = supabase.storage
+      .from("menu-photos")
+      .getPublicUrl(fileName);
+
+    const photoUrl = publicUrlData.publicUrl;
+
+    // Same vendor-scoping pattern as your other routes - a vendor
+    // can only attach a photo to their OWN menu item.
+    const result = await db.query(
+      `UPDATE menu_items SET photo_url = $1 WHERE id = $2 AND vendor_id = $3 RETURNING *`,
+      [photoUrl, id, req.vendorId],
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Menu item not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong uploading the photo" });
   }
 });
 
