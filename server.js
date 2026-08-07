@@ -11,6 +11,8 @@ const ordersRouter = require("./routes/orders");
 const authRouter = require("./routes/auth");
 const publicRouter = require("./routes/publicRoutes"); // remember: your file is named publicRoutes.js
 const vendorProfileRouter = require("./routes/vendorProfile");
+const customerAuthRouter = require("./routes/customerAuth");
+const customerProfileRouter = require("./routes/customerProfile");
 
 const app = express();
 
@@ -24,6 +26,8 @@ app.use("/api/public", publicRouter);
 app.use("/api/menu-items", menuItemsRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/vendor", vendorProfileRouter);
+app.use("/api/customer/auth", customerAuthRouter);
+app.use("/api/customer", customerProfileRouter);
 
 // A simple "is the server alive" check
 app.get("/", (req, res) => {

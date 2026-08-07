@@ -2,13 +2,16 @@
 // Defines what happens when the frontend hits /api/orders
 //
 // NOTE: unlike menu items, not every route here needs a login -
-// customers placing an order aren't logged-in vendors. Only the
-// vendor-facing routes (viewing orders, updating status) are protected.
+// customers placing an order aren't necessarily logged-in. Only the
+// vendor-facing routes (viewing orders, updating status) require login.
+// POST uses optionalCustomerAuth so a logged-in customer's order gets
+// linked to their account, but guest checkout still works too.
 
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
 const requireAuth = require("../middleware/requireAuth");
+const optionalCustomerAuth = require("../middleware/optionalCustomerAuth");
 
 const VALID_STATUSES = [
   "placed",
@@ -21,10 +24,10 @@ const VALID_STATUSES = [
 ];
 
 // -----------------------------------------
-// POST /api/orders  (PUBLIC - called by the Customer App)
+// POST /api/orders  (PUBLIC - called by the Customer App, guest or logged-in)
 // Creates a new order with one or more items.
 // -----------------------------------------
-router.post("/", async (req, res) => {
+router.post("/", optionalCustomerAuth, async (req, res) => {
   const { vendor_id, customer_name, customer_phone, delivery_address, items } =
     req.body;
 
@@ -58,10 +61,19 @@ router.post("/", async (req, res) => {
       total += price * item.quantity;
     }
 
+    // req.customerId is only set if optionalCustomerAuth found a valid
+    // customer token - otherwise this stays undefined/null (guest order).
     const orderResult = await client.query(
-      `INSERT INTO orders (vendor_id, customer_name, customer_phone, delivery_address, total_amount)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [vendor_id, customer_name, customer_phone, delivery_address, total],
+      `INSERT INTO orders (vendor_id, customer_id, customer_name, customer_phone, delivery_address, total_amount)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [
+        vendor_id,
+        req.customerId || null,
+        customer_name,
+        customer_phone,
+        delivery_address,
+        total,
+      ],
     );
     const order = orderResult.rows[0];
 
@@ -133,7 +145,6 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
   }
 
   try {
-    // "AND vendor_id = $3" stops one vendor from updating another vendor's order
     const result = await db.query(
       `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 AND vendor_id = $3 RETURNING *`,
       [status, id, req.vendorId],

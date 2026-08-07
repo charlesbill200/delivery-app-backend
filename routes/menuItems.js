@@ -163,6 +163,18 @@ router.delete("/:id", async (req, res) => {
     res.json({ deleted: true, id: result.rows[0].id });
   } catch (err) {
     console.error(err);
+
+    // Postgres error code 23503 = foreign key violation. This item has
+    // already been ordered at least once, so order_items still references
+    // it - deleting it would corrupt past order records. Tell the vendor
+    // to mark it unavailable instead of hard-deleting it.
+    if (err.code === "23503") {
+      return res.status(409).json({
+        error:
+          "This item has already been ordered and can't be deleted. Mark it unavailable instead.",
+      });
+    }
+
     res
       .status(500)
       .json({ error: "Something went wrong deleting the menu item" });
