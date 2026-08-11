@@ -6,17 +6,38 @@ const express = require("express");
 const router = express.Router();
 const db = require("../db");
 
+// GET /api/public/zones
+// Returns the full list of delivery zones/areas customers can pick from.
+router.get("/zones", async (req, res) => {
+  try {
+    const result = await db.query("SELECT id, name FROM zones ORDER BY name");
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong fetching zones" });
+  }
+});
+
 // GET /api/public/vendors
-// Lists all active vendors, including the storefront display fields
-// the Customer App's home screen needs (rating, delivery time, etc.)
+// Lists all active vendors. If a zone_id is passed as a query param
+// (e.g. /api/public/vendors?zone_id=2), delivery_fee reflects that
+// vendor's fee FOR THAT ZONE - falling back to their flat delivery_fee
+// if they haven't set a specific fee for this zone.
 router.get("/vendors", async (req, res) => {
+  const { zone_id } = req.query;
+
   try {
     const result = await db.query(
-      `SELECT id, name, address, phone, cuisine, cover_image_url,
-              delivery_time_estimate, delivery_fee, deal_text, rating
-       FROM vendors
-       WHERE is_active = true
-       ORDER BY name`,
+      `SELECT v.id, v.name, v.address, v.phone, v.cuisine, v.cover_image_url,
+              v.delivery_time_estimate,
+              COALESCE(vzf.delivery_fee, v.delivery_fee) AS delivery_fee,
+              v.deal_text, v.rating
+       FROM vendors v
+       LEFT JOIN vendor_zone_fees vzf
+         ON vzf.vendor_id = v.id AND vzf.zone_id = $1
+       WHERE v.is_active = true
+       ORDER BY v.name`,
+      [zone_id || null],
     );
     res.json(result.rows);
   } catch (err) {

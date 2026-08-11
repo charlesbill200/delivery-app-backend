@@ -13,7 +13,7 @@ const SALT_ROUNDS = 10;
 // POST /api/customer/auth/signup
 // -----------------------------------------
 router.post("/signup", async (req, res) => {
-  const { name, email, password, phone, address } = req.body;
+  const { name, email, password, phone, address, zone_id } = req.body;
 
   if (!name || !email || !password) {
     return res
@@ -35,10 +35,17 @@ router.post("/signup", async (req, res) => {
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
     const result = await db.query(
-      `INSERT INTO customers (name, email, password_hash, phone, address)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, email, phone, address, created_at`,
-      [name, email, passwordHash, phone || null, address || null],
+      `INSERT INTO customers (name, email, password_hash, phone, address, zone_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, name, email, phone, address, zone_id, created_at`,
+      [
+        name,
+        email,
+        passwordHash,
+        phone || null,
+        address || null,
+        zone_id || null,
+      ],
     );
 
     const customer = result.rows[0];

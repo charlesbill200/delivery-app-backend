@@ -9,10 +9,16 @@ const requireCustomerAuth = require("../middleware/requireCustomerAuth");
 router.use(requireCustomerAuth); // every route below requires a valid customer login
 
 // GET /api/customer/profile
+// Includes the zone NAME (joined in) alongside zone_id, so the app
+// doesn't need a second request just to show "Okitipupa" instead of "2".
 router.get("/profile", async (req, res) => {
   try {
     const result = await db.query(
-      "SELECT id, name, email, phone, address, created_at FROM customers WHERE id = $1",
+      `SELECT c.id, c.name, c.email, c.phone, c.address, c.zone_id,
+              z.name AS zone_name, c.created_at
+       FROM customers c
+       LEFT JOIN zones z ON z.id = c.zone_id
+       WHERE c.id = $1`,
       [req.customerId],
     );
     res.json(result.rows[0]);
@@ -26,17 +32,18 @@ router.get("/profile", async (req, res) => {
 
 // PATCH /api/customer/profile
 router.patch("/profile", async (req, res) => {
-  const { name, phone, address } = req.body;
+  const { name, phone, address, zone_id } = req.body;
 
   try {
     const result = await db.query(
       `UPDATE customers SET
          name = COALESCE($1, name),
          phone = COALESCE($2, phone),
-         address = COALESCE($3, address)
-       WHERE id = $4
-       RETURNING id, name, email, phone, address, created_at`,
-      [name, phone, address, req.customerId],
+         address = COALESCE($3, address),
+         zone_id = COALESCE($4, zone_id)
+       WHERE id = $5
+       RETURNING id, name, email, phone, address, zone_id, created_at`,
+      [name, phone, address, zone_id, req.customerId],
     );
     res.json(result.rows[0]);
   } catch (err) {

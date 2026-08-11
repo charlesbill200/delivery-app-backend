@@ -13,6 +13,7 @@ const publicRouter = require("./routes/publicRoutes"); // remember: your file is
 const vendorProfileRouter = require("./routes/vendorProfile");
 const customerAuthRouter = require("./routes/customerAuth");
 const customerProfileRouter = require("./routes/customerProfile");
+const vendorZoneFeesRouter = require("./routes/vendorZoneFees");
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use("/api/orders", ordersRouter);
 app.use("/api/vendor", vendorProfileRouter);
 app.use("/api/customer/auth", customerAuthRouter);
 app.use("/api/customer", customerProfileRouter);
+app.use("/api/vendor/zone-fees", vendorZoneFeesRouter);
 
 // A simple "is the server alive" check
 app.get("/", (req, res) => {
