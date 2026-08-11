@@ -25,11 +25,19 @@ const VALID_STATUSES = [
 
 // -----------------------------------------
 // POST /api/orders  (PUBLIC - called by the Customer App, guest or logged-in)
-// Creates a new order with one or more items.
+// Creates a new order with one or more items, plus the correct delivery
+// fee for the given zone (falls back to the vendor's flat fee if the
+// customer has no zone, or the vendor hasn't set one for that zone).
 // -----------------------------------------
 router.post("/", optionalCustomerAuth, async (req, res) => {
-  const { vendor_id, customer_name, customer_phone, delivery_address, items } =
-    req.body;
+  const {
+    vendor_id,
+    customer_name,
+    customer_phone,
+    delivery_address,
+    zone_id,
+    items,
+  } = req.body;
 
   if (!items || items.length === 0) {
     return res
@@ -52,26 +60,49 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
       priceMap[row.id] = parseFloat(row.price);
     });
 
-    let total = 0;
+    let itemsTotal = 0;
     for (const item of items) {
       const price = priceMap[item.menu_item_id];
       if (price === undefined) {
         throw new Error(`Menu item ${item.menu_item_id} not found`);
       }
-      total += price * item.quantity;
+      itemsTotal += price * item.quantity;
     }
+
+    // Work out the delivery fee: this vendor's fee for this zone if
+    // they've set one, otherwise their flat delivery_fee. If no zone
+    // was sent at all (e.g. guest checkout), delivery fee is 0 -
+    // the app should show that clearly at checkout in that case.
+    let deliveryFee = 0;
+    if (zone_id) {
+      const feeResult = await client.query(
+        `SELECT COALESCE(vzf.delivery_fee, v.delivery_fee) AS delivery_fee
+         FROM vendors v
+         LEFT JOIN vendor_zone_fees vzf
+           ON vzf.vendor_id = v.id AND vzf.zone_id = $1
+         WHERE v.id = $2`,
+        [zone_id, vendor_id],
+      );
+      if (feeResult.rows[0]) {
+        deliveryFee = parseFloat(feeResult.rows[0].delivery_fee) || 0;
+      }
+    }
+
+    const total = itemsTotal + deliveryFee;
 
     // req.customerId is only set if optionalCustomerAuth found a valid
     // customer token - otherwise this stays undefined/null (guest order).
     const orderResult = await client.query(
-      `INSERT INTO orders (vendor_id, customer_id, customer_name, customer_phone, delivery_address, total_amount)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      `INSERT INTO orders (vendor_id, customer_id, customer_name, customer_phone, delivery_address, zone_id, delivery_fee, total_amount)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
       [
         vendor_id,
         req.customerId || null,
         customer_name,
         customer_phone,
         delivery_address,
+        zone_id || null,
+        deliveryFee,
         total,
       ],
     );
