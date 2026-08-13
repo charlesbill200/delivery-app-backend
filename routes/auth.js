@@ -54,6 +54,16 @@ router.post("/signup", async (req, res) => {
 
     res.status(201).json({ vendor, token });
   } catch (err) {
+    // 23505 = Postgres unique_violation. The pre-check above handles the
+    // common case, but two signups for the same email arriving at almost
+    // the same instant can both pass that check before either INSERT
+    // lands - this is the real guard, enforced by the DB's unique
+    // constraint on vendors.email (see migration).
+    if (err.code === "23505") {
+      return res
+        .status(409)
+        .json({ error: "An account with this email already exists" });
+    }
     console.error(err);
     res
       .status(500)

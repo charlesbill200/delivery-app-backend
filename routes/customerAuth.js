@@ -58,6 +58,12 @@ router.post("/signup", async (req, res) => {
 
     res.status(201).json({ customer, token });
   } catch (err) {
+    // Same race-condition guard as vendor signup - see routes/auth.js
+    if (err.code === "23505") {
+      return res
+        .status(409)
+        .json({ error: "An account with this email already exists" });
+    }
     console.error(err);
     res
       .status(500)

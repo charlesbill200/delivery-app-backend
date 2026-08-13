@@ -39,7 +39,10 @@ router.patch("/profile", async (req, res) => {
     delivery_time_estimate,
     delivery_fee,
     deal_text,
-    rating,
+    // NOTE: "rating" is deliberately NOT accepted here. It must be
+    // computed server-side from actual customer reviews - a vendor
+    // being able to PATCH their own rating straight to 5 stars was
+    // a real bug in the previous version of this route.
   } = req.body;
 
   try {
@@ -53,9 +56,8 @@ router.patch("/profile", async (req, res) => {
          cover_image_url = COALESCE($5, cover_image_url),
          delivery_time_estimate = COALESCE($6, delivery_time_estimate),
          delivery_fee = COALESCE($7, delivery_fee),
-         deal_text = COALESCE($8, deal_text),
-         rating = COALESCE($9, rating)
-       WHERE id = $10
+         deal_text = COALESCE($8, deal_text)
+       WHERE id = $9
        RETURNING id, name, email, phone, address, cuisine, cover_image_url,
                  delivery_time_estimate, delivery_fee, deal_text, rating`,
       [
@@ -67,7 +69,6 @@ router.patch("/profile", async (req, res) => {
         delivery_time_estimate,
         delivery_fee,
         deal_text,
-        rating,
         req.vendorId,
       ],
     );

@@ -23,6 +23,21 @@ const VALID_STATUSES = [
   "cancelled",
 ];
 
+// Which statuses a vendor can move an order TO, given its CURRENT status.
+// This stops both accidental mistakes (double-clicking a stale dashboard
+// button) and misuse (a stolen/expired-looking token trying to jump an
+// order straight to "delivered"). "delivered" and "cancelled" are
+// terminal - nothing can follow them.
+const ALLOWED_TRANSITIONS = {
+  placed: ["accepted", "cancelled"],
+  accepted: ["preparing", "cancelled"],
+  preparing: ["ready", "cancelled"],
+  ready: ["picked_up", "cancelled"],
+  picked_up: ["delivered"],
+  delivered: [],
+  cancelled: [],
+};
+
 // -----------------------------------------
 // POST /api/orders  (PUBLIC - called by the Customer App, guest or logged-in)
 // Creates a new order with one or more items, plus the correct delivery
@@ -37,7 +52,12 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
     delivery_address,
     zone_id,
     items,
+    idempotency_key,
   } = req.body;
+
+  if (!vendor_id) {
+    return res.status(400).json({ error: "vendor_id is required" });
+  }
 
   if (!items || items.length === 0) {
     return res
@@ -45,15 +65,65 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
       .json({ error: "An order must include at least one item" });
   }
 
+  // Validate item shape up front - every item needs a real menu_item_id
+  // and a positive integer quantity. Catches negative/zero/fractional
+  // quantities before they ever touch the total.
+  for (const item of items) {
+    const qty = item.quantity;
+    if (
+      !item.menu_item_id ||
+      !Number.isInteger(qty) ||
+      qty <= 0 ||
+      qty > 100 // sanity ceiling - a single line item shouldn't be triple digits
+    ) {
+      return res.status(400).json({
+        error: `Invalid quantity for menu item ${item.menu_item_id}`,
+      });
+    }
+  }
+
   const client = await db.getClient();
 
   try {
     await client.query("BEGIN");
 
+    // If the caller sent an idempotency_key, check whether we've already
+    // created an order for this vendor+key. If so, just return that order
+    // instead of creating a duplicate (handles double-taps and retries).
+    if (idempotency_key) {
+      const existing = await client.query(
+        `SELECT * FROM orders WHERE vendor_id = $1 AND idempotency_key = $2`,
+        [vendor_id, idempotency_key],
+      );
+      if (existing.rows.length > 0) {
+        await client.query("ROLLBACK");
+        return res.status(200).json(existing.rows[0]);
+      }
+    }
+
+    // Confirm the vendor actually exists and is currently active -
+    // stops orders being created against a deleted/deactivated vendor.
+    const vendorResult = await client.query(
+      "SELECT id FROM vendors WHERE id = $1 AND is_active = true",
+      [vendor_id],
+    );
+    if (vendorResult.rows.length === 0) {
+      throw Object.assign(new Error("Vendor not found or inactive"), {
+        statusCode: 404,
+      });
+    }
+
     const itemIds = items.map((i) => i.menu_item_id);
+
+    // CRITICAL: only fetch items that both (a) belong to THIS vendor and
+    // (b) are currently available. Previously this queried by item id
+    // alone, so a client could send vendor A's id with vendor B's menu
+    // item ids and the order would be created anyway - wrong vendor gets
+    // credited/paid for someone else's food.
     const priceResult = await client.query(
-      "SELECT id, price FROM menu_items WHERE id = ANY($1)",
-      [itemIds],
+      `SELECT id, price FROM menu_items
+       WHERE id = ANY($1) AND vendor_id = $2 AND is_available = true`,
+      [itemIds, vendor_id],
     );
     const priceMap = {};
     priceResult.rows.forEach((row) => {
@@ -64,7 +134,14 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
     for (const item of items) {
       const price = priceMap[item.menu_item_id];
       if (price === undefined) {
-        throw new Error(`Menu item ${item.menu_item_id} not found`);
+        // Either the item doesn't exist, belongs to a different vendor,
+        // or is currently unavailable - all equally invalid here.
+        throw Object.assign(
+          new Error(
+            `Menu item ${item.menu_item_id} is not available from this vendor`,
+          ),
+          { statusCode: 400 },
+        );
       }
       itemsTotal += price * item.quantity;
     }
@@ -93,8 +170,8 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
     // req.customerId is only set if optionalCustomerAuth found a valid
     // customer token - otherwise this stays undefined/null (guest order).
     const orderResult = await client.query(
-      `INSERT INTO orders (vendor_id, customer_id, customer_name, customer_phone, delivery_address, zone_id, delivery_fee, total_amount)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      `INSERT INTO orders (vendor_id, customer_id, customer_name, customer_phone, delivery_address, zone_id, delivery_fee, total_amount, idempotency_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [
         vendor_id,
         req.customerId || null,
@@ -104,6 +181,7 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
         zone_id || null,
         deliveryFee,
         total,
+        idempotency_key || null,
       ],
     );
     const order = orderResult.rows[0];
@@ -125,8 +203,28 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
     res.status(201).json(order);
   } catch (err) {
     await client.query("ROLLBACK");
+
+    // A duplicate idempotency_key slipping through a race (two identical
+    // requests in flight at once) hits the DB unique constraint - treat
+    // that the same as the "already exists" case above.
+    if (err.code === "23505" && idempotency_key) {
+      const existing = await db.query(
+        `SELECT * FROM orders WHERE vendor_id = $1 AND idempotency_key = $2`,
+        [vendor_id, idempotency_key],
+      );
+      if (existing.rows.length > 0) {
+        return res.status(200).json(existing.rows[0]);
+      }
+    }
+
     console.error(err);
-    res.status(500).json({ error: "Something went wrong creating the order" });
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({
+      error:
+        statusCode === 500
+          ? "Something went wrong creating the order"
+          : err.message,
+    });
   } finally {
     client.release();
   }
@@ -176,14 +274,31 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
   }
 
   try {
+    // Fetch current status first so we can check it's a legal transition -
+    // vendor-scoped, same as before, so this also 404s for another
+    // vendor's order.
+    const current = await db.query(
+      "SELECT status FROM orders WHERE id = $1 AND vendor_id = $2",
+      [id, req.vendorId],
+    );
+
+    if (current.rows.length === 0) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    const currentStatus = current.rows[0].status;
+    const allowedNext = ALLOWED_TRANSITIONS[currentStatus] || [];
+
+    if (!allowedNext.includes(status)) {
+      return res.status(409).json({
+        error: `Cannot move an order from "${currentStatus}" to "${status}"`,
+      });
+    }
+
     const result = await db.query(
       `UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 AND vendor_id = $3 RETURNING *`,
       [status, id, req.vendorId],
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Order not found" });
-    }
 
     res.json(result.rows[0]);
   } catch (err) {
