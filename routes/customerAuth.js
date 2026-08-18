@@ -6,13 +6,14 @@ const router = express.Router();
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const db = require("../db");
+const { loginLimiter, signupLimiter } = require("../middleware/authRateLimit");
 
 const SALT_ROUNDS = 10;
 
 // -----------------------------------------
 // POST /api/customer/auth/signup
 // -----------------------------------------
-router.post("/signup", async (req, res) => {
+router.post("/signup", signupLimiter, async (req, res) => {
   const { name, email, password, phone, address, zone_id } = req.body;
 
   if (!name || !email || !password) {
@@ -74,7 +75,7 @@ router.post("/signup", async (req, res) => {
 // -----------------------------------------
 // POST /api/customer/auth/login
 // -----------------------------------------
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {

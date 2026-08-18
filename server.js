@@ -17,8 +17,33 @@ const vendorZoneFeesRouter = require("./routes/vendorZoneFees");
 
 const app = express();
 
+// --- CORS ---
+// ALLOWED_ORIGINS is a comma-separated list, e.g.
+//   ALLOWED_ORIGINS=https://your-vendor-dashboard.com,https://your-admin.com
+// The customer app is a mobile app (no browser origin), so it isn't
+// affected by this - CORS only matters for browser-based clients like
+// the vendor dashboard. If ALLOWED_ORIGINS isn't set (e.g. local dev),
+// falls back to allowing any origin so local development doesn't break.
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+  : null;
+
+const corsOptions = allowedOrigins
+  ? {
+      origin: (origin, callback) => {
+        // requests with no origin (curl, server-to-server, mobile apps)
+        // are allowed through - CORS is a browser-enforced concept only
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+        } else {
+          callback(new Error("Not allowed by CORS"));
+        }
+      },
+    }
+  : {}; // no ALLOWED_ORIGINS set - permissive, for local dev only
+
 // --- Middleware (things that run on EVERY request) ---
-app.use(cors()); // allows your React app (different port) to call this API
+app.use(cors(corsOptions));
 app.use(express.json()); // lets us read JSON from request bodies (req.body)
 
 // --- Routes ---

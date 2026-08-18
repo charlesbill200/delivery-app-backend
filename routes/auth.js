@@ -6,6 +6,7 @@ const router = express.Router();
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const db = require("../db");
+const { loginLimiter, signupLimiter } = require("../middleware/authRateLimit");
 
 // How many "rounds" bcrypt uses to scramble the password.
 // Higher = more secure but slower. 10 is a solid, standard default.
@@ -15,7 +16,7 @@ const SALT_ROUNDS = 10;
 // POST /api/auth/signup
 // Creates a new vendor account
 // -----------------------------------------
-router.post("/signup", async (req, res) => {
+router.post("/signup", signupLimiter, async (req, res) => {
   const { name, email, password, phone, address } = req.body;
 
   if (!name || !email || !password) {
@@ -75,7 +76,7 @@ router.post("/signup", async (req, res) => {
 // POST /api/auth/login
 // Logs an existing vendor in
 // -----------------------------------------
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
