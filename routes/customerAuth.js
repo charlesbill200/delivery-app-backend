@@ -164,11 +164,9 @@ router.post("/signup/verify", loginLimiter, async (req, res) => {
   try {
     const payload = await verifyOtp(phone, "signup", code);
     if (!payload) {
-      return res
-        .status(400)
-        .json({
-          error: "Verification session not found - please sign up again",
-        });
+      return res.status(400).json({
+        error: "Verification session not found - please sign up again",
+      });
     }
 
     const result = await db.query(
@@ -230,8 +228,10 @@ router.post("/login", loginLimiter, async (req, res) => {
     );
     const customer = result.rows[0];
 
-    // Same generic error whether the identifier or password is wrong, on purpose.
-    if (!customer) {
+    // Same generic error whether the identifier is wrong, the password is
+    // wrong, or the account has been suspended - on purpose, same
+    // reasoning as vendor login.
+    if (!customer || customer.is_active === false) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
 

@@ -89,9 +89,11 @@ router.post("/login", loginLimiter, async (req, res) => {
     ]);
     const vendor = result.rows[0];
 
-    // Same error message whether the email doesn't exist OR the password is wrong -
-    // this is intentional, so an attacker can't figure out which emails are registered
-    if (!vendor) {
+    // Same error message whether the email doesn't exist, the password is
+    // wrong, OR the account has been suspended (is_active = false) - this
+    // is intentional, so an attacker can't figure out which emails are
+    // registered or which vendors have been suspended.
+    if (!vendor || vendor.is_active === false) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 

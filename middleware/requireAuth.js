@@ -1,9 +1,12 @@
 // middleware/requireAuth.js
-// This function runs BEFORE a protected route.
-// Its job: check the request has a valid token, and if so,
-// attach the vendor's ID to the request so the route knows who's asking.
+// This function runs BEFORE a protected vendor route.
+// Its job: check the request has a valid token, that the vendor account
+// is still active (a suspension made in the Admin Panel takes effect
+// immediately, not after the vendor's 7-day token happens to expire),
+// and if so, attach the vendor's ID to the request.
 
 const jwt = require("jsonwebtoken");
+const db = require("../db");
 
 function requireAuth(req, res, next) {
   // Tokens are sent in a header like: "Authorization: Bearer <token>"
@@ -15,13 +18,28 @@ function requireAuth(req, res, next) {
 
   const token = authHeader.split(" ")[1];
 
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.vendorId = decoded.vendorId; // routes can now read req.vendorId
-    next(); // token is valid - let the request continue to the actual route
-  } catch (err) {
-    return res.status(401).json({ error: "Invalid or expired token" });
-  }
+  jwt.verify(token, process.env.JWT_SECRET, async (err, decoded) => {
+    if (err) {
+      return res.status(401).json({ error: "Invalid or expired token" });
+    }
+
+    try {
+      const result = await db.query(
+        "SELECT is_active FROM vendors WHERE id = $1",
+        [decoded.vendorId],
+      );
+      const vendor = result.rows[0];
+      if (!vendor || vendor.is_active === false) {
+        return res.status(401).json({ error: "Invalid or expired token" });
+      }
+
+      req.vendorId = decoded.vendorId; // routes can now read req.vendorId
+      next();
+    } catch (dbErr) {
+      console.error(dbErr);
+      res.status(500).json({ error: "Something went wrong authenticating" });
+    }
+  });
 }
 
 module.exports = requireAuth;
