@@ -14,6 +14,7 @@ const vendorProfileRouter = require("./routes/vendorProfile");
 const customerAuthRouter = require("./routes/customerAuth");
 const customerProfileRouter = require("./routes/customerProfile");
 const vendorZoneFeesRouter = require("./routes/vendorZoneFees");
+const paymentsRouter = require("./routes/payments");
 
 const app = express();
 
@@ -44,6 +45,15 @@ const corsOptions = allowedOrigins
 
 // --- Middleware (things that run on EVERY request) ---
 app.use(cors(corsOptions));
+
+// The Paystack webhook MUST be mounted with a raw body parser, and BEFORE
+// express.json() below - the signature check in paystackService.js needs
+// the exact raw bytes Paystack signed, not a re-serialized JS object.
+// (express's body parsers set an internal flag once a body has been
+// read, so express.json() further down correctly skips re-parsing this
+// one path instead of hanging on an already-consumed stream.)
+app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
+
 app.use(express.json()); // lets us read JSON from request bodies (req.body)
 
 // --- Routes ---
@@ -55,6 +65,7 @@ app.use("/api/vendor", vendorProfileRouter);
 app.use("/api/customer/auth", customerAuthRouter);
 app.use("/api/customer", customerProfileRouter);
 app.use("/api/vendor/zone-fees", vendorZoneFeesRouter);
+app.use("/api/payments", paymentsRouter);
 
 // A simple "is the server alive" check
 app.get("/", (req, res) => {
