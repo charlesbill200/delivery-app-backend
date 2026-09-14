@@ -15,6 +15,12 @@ const customerAuthRouter = require("./routes/customerAuth");
 const customerProfileRouter = require("./routes/customerProfile");
 const vendorZoneFeesRouter = require("./routes/vendorZoneFees");
 const paymentsRouter = require("./routes/payments");
+const adminAuthRouter = require("./routes/adminAuth");
+const adminDashboardRouter = require("./routes/adminDashboard");
+const adminOrdersRouter = require("./routes/adminOrders");
+const adminVendorsRouter = require("./routes/adminVendors");
+const adminCustomersRouter = require("./routes/adminCustomers");
+const adminTransactionsRouter = require("./routes/adminTransactions");
 
 const app = express();
 
@@ -66,6 +72,14 @@ app.use("/api/customer/auth", customerAuthRouter);
 app.use("/api/customer", customerProfileRouter);
 app.use("/api/vendor/zone-fees", vendorZoneFeesRouter);
 app.use("/api/payments", paymentsRouter);
+
+// --- Admin routes (all admin-only, enforced server-side by requireAdminAuth) ---
+app.use("/api/admin/auth", adminAuthRouter);
+app.use("/api/admin/dashboard", adminDashboardRouter);
+app.use("/api/admin/orders", adminOrdersRouter);
+app.use("/api/admin/vendors", adminVendorsRouter);
+app.use("/api/admin/customers", adminCustomersRouter);
+app.use("/api/admin/transactions", adminTransactionsRouter);
 
 // A simple "is the server alive" check
 app.get("/", (req, res) => {
