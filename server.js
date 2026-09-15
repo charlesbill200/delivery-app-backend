@@ -21,6 +21,7 @@ const adminOrdersRouter = require("./routes/adminOrders");
 const adminVendorsRouter = require("./routes/adminVendors");
 const adminCustomersRouter = require("./routes/adminCustomers");
 const adminTransactionsRouter = require("./routes/adminTransactions");
+const adminManagementRouter = require("./routes/adminManagement");
 
 const app = express();
 
@@ -80,6 +81,7 @@ app.use("/api/admin/orders", adminOrdersRouter);
 app.use("/api/admin/vendors", adminVendorsRouter);
 app.use("/api/admin/customers", adminCustomersRouter);
 app.use("/api/admin/transactions", adminTransactionsRouter);
+app.use("/api/admin/admins", adminManagementRouter);
 
 // A simple "is the server alive" check
 app.get("/", (req, res) => {
