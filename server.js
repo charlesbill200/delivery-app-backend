@@ -31,29 +31,38 @@ const app = express();
 app.set("trust proxy", 1);
 
 // --- CORS ---
-// ALLOWED_ORIGINS is a comma-separated list, e.g.
-//   ALLOWED_ORIGINS=https://your-vendor-dashboard.com,https://your-admin.com
-// The customer app is a mobile app (no browser origin), so it isn't
-// affected by this - CORS only matters for browser-based clients like
-// the vendor dashboard. If ALLOWED_ORIGINS isn't set (e.g. local dev),
-// falls back to allowing any origin so local development doesn't break.
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(",").map((o) => o.trim())
-  : null;
+// ALLOWED_ORIGINS is a comma-separated list of website addresses that are
+// allowed to call this API from a browser, e.g.
+//   ALLOWED_ORIGINS=https://my-vendor-site.com,https://my-admin-site.com
+// Requests with no Origin header (the mobile app, curl, Paystack's servers)
+// are not affected - CORS is only enforced by web browsers.
+//
+// If ALLOWED_ORIGINS is missing, browsers are BLOCKED by default. The only
+// exception is local development (NODE_ENV is not "production"), where
+// http://localhost:<any port> is allowed so you can test on your computer.
+const isProduction = process.env.NODE_ENV === "production";
 
-const corsOptions = allowedOrigins
-  ? {
-      origin: (origin, callback) => {
-        // requests with no origin (curl, server-to-server, mobile apps)
-        // are allowed through - CORS is a browser-enforced concept only
-        if (!origin || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error("Not allowed by CORS"));
-        }
-      },
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const localhostPattern = /^http:\/\/localhost:\d+$/;
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (
+      allowedOrigins.length === 0 &&
+      !isProduction &&
+      localhostPattern.test(origin)
+    ) {
+      return callback(null, true);
     }
-  : {}; // no ALLOWED_ORIGINS set - permissive, for local dev only
+    callback(new Error("Not allowed by CORS"));
+  },
+};
 
 // --- Middleware (things that run on EVERY request) ---
 app.use(cors(corsOptions));
@@ -91,6 +100,22 @@ app.use("/api/admin/admins", adminManagementRouter);
 // A simple "is the server alive" check
 app.get("/", (req, res) => {
   res.json({ message: "Vendor Dashboard API is running" });
+});
+
+// Catches errors from any route. A website that isn't allowed by CORS gets a
+// clear 403; anything else gets a safe generic message with no technical details.
+app.use((err, req, res, next) => {
+  if (err && err.message === "Not allowed by CORS") {
+    return res
+      .status(403)
+      .json({ error: "This website is not allowed to use this API" });
+  }
+  const status = err.status || err.statusCode || 500;
+  if (status >= 400 && status < 500) {
+    return res.status(status).json({ error: "Invalid request" });
+  }
+  console.error(err);
+  res.status(500).json({ error: "Something went wrong" });
 });
 
 const PORT = process.env.PORT || 5000;
