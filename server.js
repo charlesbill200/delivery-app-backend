@@ -25,6 +25,11 @@ const adminManagementRouter = require("./routes/adminManagement");
 
 const app = express();
 
+// Render puts a proxy in front of this server. Without this setting, every
+// visitor appears to have the same IP address, so the rate limiter treats
+// all users as one person.
+app.set("trust proxy", 1);
+
 // --- CORS ---
 // ALLOWED_ORIGINS is a comma-separated list, e.g.
 //   ALLOWED_ORIGINS=https://your-vendor-dashboard.com,https://your-admin.com
