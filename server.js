@@ -14,6 +14,7 @@ const vendorProfileRouter = require("./routes/vendorProfile");
 const customerAuthRouter = require("./routes/customerAuth");
 const customerProfileRouter = require("./routes/customerProfile");
 const vendorZoneFeesRouter = require("./routes/vendorZoneFees");
+const vendorDashboardRouter = require("./routes/vendorDashboard");
 const paymentsRouter = require("./routes/payments");
 const adminAuthRouter = require("./routes/adminAuth");
 const adminDashboardRouter = require("./routes/adminDashboard");
@@ -86,6 +87,7 @@ app.use("/api/vendor", vendorProfileRouter);
 app.use("/api/customer/auth", customerAuthRouter);
 app.use("/api/customer", customerProfileRouter);
 app.use("/api/vendor/zone-fees", vendorZoneFeesRouter);
+app.use("/api/vendor/dashboard", vendorDashboardRouter);
 app.use("/api/payments", paymentsRouter);
 
 // --- Admin routes (all admin-only, enforced server-side by requireAdminAuth) ---
