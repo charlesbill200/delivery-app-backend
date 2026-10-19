@@ -23,6 +23,8 @@ router.get("/zones", async (req, res) => {
 // (e.g. /api/public/vendors?zone_id=2), delivery_fee reflects that
 // vendor's fee FOR THAT ZONE - falling back to their flat delivery_fee
 // if they haven't set a specific fee for this zone.
+// Each vendor includes is_open, so the app can show closed stores as
+// "Closed" (a closed store refuses new orders).
 router.get("/vendors", async (req, res) => {
   const { zone_id } = req.query;
 
@@ -31,7 +33,7 @@ router.get("/vendors", async (req, res) => {
       `SELECT v.id, v.name, v.address, v.phone, v.cuisine, v.cover_image_url,
               v.delivery_time_estimate,
               COALESCE(vzf.delivery_fee, v.delivery_fee) AS delivery_fee,
-              v.deal_text, v.rating
+              v.deal_text, v.rating, v.is_open
        FROM vendors v
        LEFT JOIN vendor_zone_fees vzf
          ON vzf.vendor_id = v.id AND vzf.zone_id = $1

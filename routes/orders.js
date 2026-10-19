@@ -124,13 +124,20 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
     // Confirm the vendor actually exists and is currently active -
     // stops orders being created against a deleted/deactivated vendor.
     const vendorResult = await client.query(
-      "SELECT id FROM vendors WHERE id = $1 AND is_active = true",
+      "SELECT id, is_open FROM vendors WHERE id = $1 AND is_active = true",
       [vendor_id],
     );
     if (vendorResult.rows.length === 0) {
       throw Object.assign(new Error("Vendor not found or inactive"), {
         statusCode: 404,
       });
+    }
+    // A closed store doesn't take new orders (orders it already has carry on).
+    if (!vendorResult.rows[0].is_open) {
+      throw Object.assign(
+        new Error("This store is currently closed and not taking orders"),
+        { statusCode: 409 },
+      );
     }
 
     const itemIds = items.map((i) => i.menu_item_id);
