@@ -60,4 +60,25 @@ router.patch("/:zoneId", async (req, res) => {
   }
 });
 
+// DELETE /api/vendor/zone-fees/:zoneId
+// Removes this vendor's fee for one area, so their default delivery fee is
+// used for that area again.
+router.delete("/:zoneId", async (req, res) => {
+  if (!/^\d+$/.test(req.params.zoneId)) {
+    return res.status(400).json({ error: "Invalid area" });
+  }
+  try {
+    await db.query(
+      "DELETE FROM vendor_zone_fees WHERE vendor_id = $1 AND zone_id = $2",
+      [req.vendorId, parseInt(req.params.zoneId, 10)],
+    );
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error(err);
+    res
+      .status(500)
+      .json({ error: "Something went wrong removing the delivery fee" });
+  }
+});
+
 module.exports = router;

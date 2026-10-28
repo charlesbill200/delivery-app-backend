@@ -5,6 +5,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../db");
+const { withinHours } = require("../services/storeHours");
 
 // GET /api/public/zones
 // Returns the full list of delivery zones/areas customers can pick from.
@@ -23,8 +24,8 @@ router.get("/zones", async (req, res) => {
 // (e.g. /api/public/vendors?zone_id=2), delivery_fee reflects that
 // vendor's fee FOR THAT ZONE - falling back to their flat delivery_fee
 // if they haven't set a specific fee for this zone.
-// Each vendor includes is_open, so the app can show closed stores as
-// "Closed" (a closed store refuses new orders).
+// is_open is the vendor's own switch; is_open_now also takes their opening
+// hours into account. A store that isn't open now refuses new orders.
 router.get("/vendors", async (req, res) => {
   const { zone_id } = req.query;
 
@@ -33,7 +34,7 @@ router.get("/vendors", async (req, res) => {
       `SELECT v.id, v.name, v.address, v.phone, v.cuisine, v.cover_image_url,
               v.delivery_time_estimate,
               COALESCE(vzf.delivery_fee, v.delivery_fee) AS delivery_fee,
-              v.deal_text, v.rating, v.is_open
+              v.deal_text, v.rating, v.is_open, v.description, v.min_order_amount
        FROM vendors v
        LEFT JOIN vendor_zone_fees vzf
          ON vzf.vendor_id = v.id AND vzf.zone_id = $1
@@ -41,7 +42,22 @@ router.get("/vendors", async (req, res) => {
        ORDER BY v.name`,
       [zone_id || null],
     );
-    res.json(result.rows);
+
+    const hoursResult = await db.query(
+      `SELECT vendor_id, day_of_week, is_open, open_time, close_time
+       FROM vendor_opening_hours`,
+    );
+    const hoursByVendor = {};
+    hoursResult.rows.forEach((r) => {
+      (hoursByVendor[r.vendor_id] = hoursByVendor[r.vendor_id] || []).push(r);
+    });
+
+    res.json(
+      result.rows.map((v) => ({
+        ...v,
+        is_open_now: v.is_open && withinHours(hoursByVendor[v.id]),
+      })),
+    );
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong fetching vendors" });

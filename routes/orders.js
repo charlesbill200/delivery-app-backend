@@ -12,6 +12,7 @@ const router = express.Router();
 const db = require("../db");
 const requireAuth = require("../middleware/requireAuth");
 const optionalCustomerAuth = require("../middleware/optionalCustomerAuth");
+const { isWithinOpeningHours } = require("../services/storeHours");
 
 const VALID_STATUSES = [
   "placed",
@@ -124,7 +125,7 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
     // Confirm the vendor actually exists and is currently active -
     // stops orders being created against a deleted/deactivated vendor.
     const vendorResult = await client.query(
-      "SELECT id, is_open FROM vendors WHERE id = $1 AND is_active = true",
+      "SELECT id, is_open, min_order_amount, delivery_fee FROM vendors WHERE id = $1 AND is_active = true",
       [vendor_id],
     );
     if (vendorResult.rows.length === 0) {
@@ -136,6 +137,15 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
     if (!vendorResult.rows[0].is_open) {
       throw Object.assign(
         new Error("This store is currently closed and not taking orders"),
+        { statusCode: 409 },
+      );
+    }
+    // Outside its opening hours (Nigerian time) a store doesn't take new orders.
+    if (!(await isWithinOpeningHours(client, vendor_id))) {
+      throw Object.assign(
+        new Error(
+          "This store is closed right now. Please check its opening hours.",
+        ),
         { statusCode: 409 },
       );
     }
@@ -173,6 +183,17 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
       itemsTotal += price * item.quantity;
     }
 
+    // A store can set a minimum order (items only, delivery fee not included).
+    const minimumOrder = parseFloat(vendorResult.rows[0].min_order_amount) || 0;
+    if (minimumOrder > 0 && itemsTotal < minimumOrder) {
+      throw Object.assign(
+        new Error(
+          `The minimum order for this store is ₦${minimumOrder.toLocaleString("en-NG")}`,
+        ),
+        { statusCode: 400 },
+      );
+    }
+
     // Work out the delivery fee: this vendor's fee for this zone if
     // they've set one, otherwise their flat delivery_fee. If no zone
     // was sent at all (e.g. guest checkout), delivery fee is 0 -
@@ -190,6 +211,12 @@ router.post("/", optionalCustomerAuth, async (req, res) => {
       if (feeResult.rows[0]) {
         deliveryFee = parseFloat(feeResult.rows[0].delivery_fee) || 0;
       }
+    }
+
+    // No area chosen: use the store's default delivery fee, so a delivery is
+    // never free just because the area was left out.
+    if (!zone_id) {
+      deliveryFee = parseFloat(vendorResult.rows[0].delivery_fee) || 0;
     }
 
     const total = itemsTotal + deliveryFee;
